@@ -82,3 +82,21 @@ def build_graph() -> StateGraph:
 
 # Module-level compiled graph (singleton)
 compiled_graph = build_graph()
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def create_pipeline(mode: str = "open_book"):
+    """
+    Create and return the blog generation pipeline.
+    
+    Args:
+        mode: "open_book" (with research), "hybrid", or "closed_book" (LLM only)
+    
+    Returns:
+        Compiled LangGraph pipeline ready to invoke
+    """
+    logger.info("Pipeline created with mode=%s", mode)
+    return compiled_graph
