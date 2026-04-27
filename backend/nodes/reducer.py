@@ -50,7 +50,7 @@ def _invoke_reducer(title: str, tone: str, audience: str,
     )
     llm = get_llm(temperature=0.4)
     raw = llm.invoke(prompt)
-    return raw.content.strip()
+    return raw.strip()
 
 
 def reducer_node(state: GraphState) -> GraphState:

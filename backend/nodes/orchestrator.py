@@ -8,7 +8,7 @@ import logging
 
 from backend.config import get_llm
 from backend.models import GraphState
-from backend.utils import extract_json, retry
+from backend.utils import extract_json, normalize_dict_list, retry
 
 logger = logging.getLogger("blog_gen.orchestrator")
 
@@ -47,11 +47,62 @@ Guidelines:
 """
 
 
+def _normalize_plan(plan: dict, topic: str, category: str, audience: str, tone: str) -> dict:
+    """Sanitize planner output before it reaches worker and UI layers."""
+    sections_raw = normalize_dict_list(plan.get("sections", []), "plan sections")
+    sections: list[dict] = []
+
+    for idx, section in enumerate(sections_raw, start=1):
+        heading = str(section.get("heading", "")).strip() or f"Section {idx}"
+        goal = str(section.get("goal", "")).strip()
+
+        bullet_points_raw = section.get("bullet_points", [])
+        if isinstance(bullet_points_raw, str):
+            bullet_points = [bullet_points_raw.strip()] if bullet_points_raw.strip() else []
+        elif isinstance(bullet_points_raw, list):
+            bullet_points = [
+                str(point).strip() for point in bullet_points_raw if str(point).strip()
+            ]
+        else:
+            bullet_points = []
+
+        if not bullet_points:
+            fallback_point = goal or f"Key ideas for {heading.lower()}."
+            bullet_points = [fallback_point]
+
+        sections.append({
+            "heading": heading,
+            "goal": goal,
+            "bullet_points": bullet_points,
+        })
+
+    if not sections:
+        raise ValueError("Planner returned no valid section objects")
+
+    estimated_word_count = plan.get("estimated_word_count", 1200)
+    if not isinstance(estimated_word_count, int):
+        try:
+            estimated_word_count = int(estimated_word_count)
+        except (TypeError, ValueError):
+            estimated_word_count = 1200
+    estimated_word_count = max(800, min(2000, estimated_word_count))
+
+    return {
+        "title": str(plan.get("title", "")).strip() or f"Blog: {topic}",
+        "category": str(plan.get("category", "")).strip() or category,
+        "target_audience": str(plan.get("target_audience", "")).strip() or audience,
+        "tone": str(plan.get("tone", "")).strip() or tone,
+        "estimated_word_count": estimated_word_count,
+        "sections": sections,
+    }
+
+
 @retry()
 def _invoke_planner(topic: str, category: str, audience: str,
                     tone: str, research: list[dict]) -> dict:
-    research_summary = "None available." if not research else "\n".join(
-        f"- {r.get('title','')}: {r.get('summary','')}" for r in research
+    safe_research = normalize_dict_list(research, "research context")
+    research_summary = "None available." if not safe_research else "\n".join(
+        f"- {r.get('title','')}: {r.get('summary','')}" for r in safe_research
     )
     prompt = PLAN_PROMPT.format(
         topic=topic,
@@ -62,7 +113,13 @@ def _invoke_planner(topic: str, category: str, audience: str,
     )
     llm = get_llm(temperature=0.5)
     raw = llm.invoke(prompt)
-    return extract_json(raw.content)
+    result = extract_json(raw)
+    
+    # Validate result is a dict
+    if not isinstance(result, dict):
+        raise ValueError(f"Planner must return a JSON object, got {type(result).__name__}")
+
+    return _normalize_plan(result, topic, category, audience, tone)
 
 
 def orchestrator_node(state: GraphState) -> GraphState:

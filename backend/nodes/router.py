@@ -19,29 +19,31 @@ logger = logging.getLogger("blog_gen.router")
 
 ROUTER_PROMPT = """\
 You are an expert editorial strategist. Given a blog topic, perform the
-following analysis and return ONLY a JSON object (no extra text):
+following analysis and return ONLY a JSON object (no extra text, no markdown):
 
 {{
-  "category": "<one of: tech, finance, health, travel, lifestyle, education, business, science, food, sports, entertainment, general>",
-  "target_audience": "<one of: beginner, intermediate, expert, general>",
-  "tone": "<one of: educational, storytelling, persuasive, analytical, conversational, descriptive>",
-  "complexity": "<one of: simple, moderate, complex>",
-  "needs_research": <true or false>,
-  "mode": "<one of: closed_book, hybrid, open_book>"
+  "category": "sports",
+  "target_audience": "general",
+  "tone": "informative",
+  "complexity": "moderate",
+  "needs_research": true,
+  "mode": "hybrid"
 }}
 
-Decision guidelines:
+For the given topic, determine:
+1. category: One of [tech, finance, health, travel, lifestyle, education, business, science, food, sports, entertainment, general]
+2. target_audience: One of [beginner, intermediate, expert, general]
+3. tone: One of [educational, storytelling, persuasive, analytical, conversational, descriptive]
+4. complexity: One of [simple, moderate, complex]
+5. needs_research: true or false (bool, no quotes)
+6. mode: One of [closed_book, hybrid, open_book]
+
+Guidelines:
 - closed_book  → topic is simple/general and well-known; no live data needed.
 - hybrid       → moderate complexity; a few sources would add depth (top 3).
 - open_book    → complex, data-heavy, or rapidly-evolving; full research (5-8 sources).
 
-Tone mapping guidance:
-- tech → educational or analytical
-- travel → descriptive or storytelling
-- finance → analytical or persuasive
-- lifestyle/food → conversational or storytelling
-- health → educational
-- business → persuasive or analytical
+Respond with ONLY the JSON object, nothing else.
 
 Topic: {topic}
 """
@@ -51,7 +53,14 @@ Topic: {topic}
 def _invoke_router(topic: str) -> dict:
     llm = get_llm(temperature=0.3)
     raw = llm.invoke(ROUTER_PROMPT.format(topic=topic))
-    return extract_json(raw.content)
+    result = extract_json(raw)
+    
+    # Validate result is a dict (not a number, list, etc.)
+    if not isinstance(result, dict):
+        logger.warning("Router returned non-dict JSON: %s", type(result))
+        raise ValueError(f"Router must return a JSON object, got {type(result).__name__}")
+    
+    return result
 
 
 def router_node(state: GraphState) -> GraphState:

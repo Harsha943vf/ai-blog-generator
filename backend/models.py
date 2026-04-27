@@ -3,7 +3,7 @@ Data models — GraphState (TypedDict for LangGraph) and supporting Pydantic sch
 """
 
 from __future__ import annotations
-from typing import TypedDict, Any
+from typing import TypedDict, Any, Callable
 
 
 class GraphState(TypedDict, total=False):
@@ -14,9 +14,13 @@ class GraphState(TypedDict, total=False):
     category: str                 # tech, finance, health, travel …
     target_audience: str          # beginner / intermediate / expert / general
     tone: str                     # educational, storytelling, persuasive …
+    blog_length: str              # short | medium | long
+    blog_format: str              # standard | seo-optimized | listicle | how-to | opinion
+    llm_provider: str             # ollama | openai | auto
     research_data: list[dict]     # [{title, url, summary}, …]
     plan: dict[str, Any]          # structured blog plan
     sections: list[str]           # rendered markdown per section
     final_markdown: str           # polished combined output
     images: list[dict]            # [{path, alt, placement}, …]
     errors: list[str]             # accumulated non-fatal errors
+    progress_callback: Callable[[str, dict], None] | None  # optional callback for streaming updates

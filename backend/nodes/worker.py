@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from backend.config import get_llm
 from backend.models import GraphState
-from backend.utils import retry
+from backend.utils import normalize_dict_list, retry
 
 logger = logging.getLogger("blog_gen.worker")
 
@@ -76,20 +76,27 @@ def _write_section(
 
     llm = get_llm(temperature=0.7)
     raw = llm.invoke(prompt)
-    return raw.content.strip()
+    return raw.strip()
 
 
 def worker_node(state: GraphState) -> GraphState:
     """Generate all sections concurrently."""
     plan = state.get("plan", {})
-    sections_spec = plan.get("sections", [])
-    research = state.get("research_data", [])
+    sections_spec = normalize_dict_list(plan.get("sections", []), "worker sections")
+    research = normalize_dict_list(state.get("research_data", []), "worker research")
     total = len(sections_spec)
 
     logger.info("Worker: generating %d sections in parallel", total)
 
     results: dict[int, str] = {}
     errors: list[str] = list(state.get("errors", []))
+
+    if total == 0:
+        logger.warning("Worker: no valid sections available to generate")
+        return {
+            "sections": [],
+            "errors": errors + ["Worker error: no valid sections available to generate"],
+        }
 
     with ThreadPoolExecutor(max_workers=min(total, 4)) as pool:
         future_map = {
